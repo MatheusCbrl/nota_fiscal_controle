@@ -3,6 +3,7 @@ from supabase import create_client, Client
 import datetime
 import pandas as pd
 import plotly.express as px
+from fpdf import FPDF
 
 # Configurando a conexão com Supabase
 url = st.secrets["supabase"]["url"]
@@ -46,7 +47,77 @@ def mostrar_login():
             st.session_state.authenticated = True
         else:
             st.error("Usuário ou senha incorretos")
+
+
+class PDF(FPDF):
+    def header(self):
+        # Logotipo
+        self.image("logomarca.png", 10, 8, 33)  # Substitua pelo caminho do seu logotipo
+        self.set_font("Arial", "B", 12)
+        self.cell(0, 10, "Relatório do Cliente", ln=True, align="C")
+        self.ln(10)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font("Arial", "I", 8)
+        self.cell(0, 10, f"Página {self.page_no()}", align="C")
+
+    def add_title(self, cliente):
+        self.set_font("Arial", "B", 16)
+        self.set_text_color(40, 40, 100)
+        self.cell(0, 10, f"Relatório: {cliente}", ln=True, align="C")
+        self.ln(10)
+
+    def add_details(self, df_cliente, colunas_mapeadas):
+        self.set_font("Arial", size=10)
+        for index, row in df_cliente.iterrows():
+            self.set_fill_color(230, 230, 230)  # Fundo cinza claro
+            self.cell(0, 10, f"Ordem #{index + 1}", ln=True, align="L", fill=True)
+            self.ln(2)
+
+            for col, value in row.items():
+                if col in colunas_mapeadas:
+                    self.set_font("Arial", "B", 10)
+                    self.cell(50, 10, f"{colunas_mapeadas[col]}:", border=0, ln=0)
+                    self.set_font("Arial", "", 10)
+                    self.cell(0, 10, str(value), border=0, ln=1)
+            self.ln(5)  # Espaço entre ordens
             
+# Função para gerar PDF estilizado com mapeamento
+def gerar_pdf(cliente, df_cliente):
+    # Mapeamento das colunas para os nomes desejados
+    colunas_mapeadas = {
+        "remetente": "Remetente",
+        "endereco_remetente": "Endereço do Remetente",
+        "destinatario": "Destinatário",
+        "endereco_destinatario": "Endereço do Destinatário",
+        "cidade": "Cidade",
+        "frete_tipo": "Tipo de Frete",
+        "valor_frete": "Valor do Frete",
+        "data": "Data",
+        "hora": "Hora",
+        "conteudo": "Conteúdo",
+        "qtde_volumes": "Quantidade de Volumes",
+        "valor_nf": "Valor da Nota Fiscal",
+        "peso": "Peso (Kg)",
+        "solicitado_por": "Solicitado Por"
+    }
+
+    pdf = PDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    # Título
+    pdf.add_title(cliente)
+
+    # Detalhes linha por linha
+    pdf.add_details(df_cliente, colunas_mapeadas)
+
+    # Salvar PDF
+    arquivo_pdf = f"Relatorio_{cliente.replace(' ', '_')}.pdf"
+    pdf.output(arquivo_pdf)
+    return arquivo_pdf
+
 # Verificar autenticação
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
@@ -54,7 +125,7 @@ if 'authenticated' not in st.session_state:
 if not st.session_state.authenticated:
     mostrar_login()
 else:
-    aba = st.radio("Escolha a aba para começar: ", ["Cadastro", "Consulta e Relatórios"])
+    aba = st.sidebar.radio("Navegação", ["Cadastro", "Consulta e Relatórios", "Filtrar por Cliente"])
     # Aba de Cadastro
     
     if aba == "Cadastro":
@@ -168,30 +239,43 @@ else:
                 grafico.columns = ["Tipo de Frete", "Quantidade"]
                 fig = px.bar(grafico, x="Tipo de Frete", y="Quantidade", title="Distribuição de Fretes Pagos e Não Pagos", color="Tipo de Frete")
                 st.plotly_chart(fig)
-# Aba Filtrar por Cliente
-elif aba == "Filtrar por Cliente":
-    st.header("Filtrar e Imprimir Informações por Cliente")
-
-    # Buscar dados do banco
-    df = buscar_ordens()
-
-    if not df.empty:
-        # Dropdown para selecionar cliente
-        cliente_selecionado = st.selectbox("Selecione um Cliente (Remetente)", options=df["remetente"].unique())
-
-        # Filtrar dados do cliente
-        df_cliente = df[df["remetente"] == cliente_selecionado]
-
-        # Exibir informações do cliente
-        st.subheader(f"Informações do Cliente: {cliente_selecionado}")
-        st.dataframe(df_cliente)
-
-        # Botão para imprimir (simulado)
-        if st.button("Imprimir"):
-            st.success("Simulação de impressão concluída! Os dados foram enviados para impressão.")
-    else:
-        st.info("Nenhuma ordem registrada no momento.")
-
+    # Aba Filtrar por Cliente com Exportação para PDF
+    elif aba == "Filtrar por Cliente":
+        st.header("Filtrar e Imprimir Informações por Cliente")
+    
+        # Buscar dados do banco
+        df = buscar_ordens()
+    
+        if not df.empty:
+            # Dropdown para selecionar cliente
+            cliente_selecionado = st.selectbox("Selecione um Cliente (Remetente)", options=df["remetente"].unique())
+    
+            # Filtrar dados do cliente
+            df_cliente = df[df["remetente"] == cliente_selecionado]
+    
+            # Exibir informações do cliente
+            st.subheader(f"Informações do Cliente: {cliente_selecionado}")
+            st.dataframe(df_cliente)
+    
+            # Botão para gerar PDF
+            if st.button("Gerar PDF"):
+                if not df_cliente.empty:
+                    arquivo_pdf = gerar_pdf(cliente_selecionado, df_cliente)
+                    st.success(f"PDF gerado com sucesso: {arquivo_pdf}")
+                    
+                    # Download do arquivo gerado
+                    with open(arquivo_pdf, "rb") as pdf_file:
+                        st.download_button(
+                            label="Baixar PDF",
+                            data=pdf_file,
+                            file_name=arquivo_pdf,
+                            mime="application/pdf",
+                        )
+                else:
+                    st.warning("Nenhum dado disponível para o cliente selecionado.")
+        else:
+            st.info("Nenhuma ordem registrada no momento.")
+    
 with st.sidebar:
       st.image("./logomarca.bmp")
       st.markdown(
