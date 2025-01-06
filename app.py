@@ -168,8 +168,29 @@ else:
                 grafico.columns = ["Tipo de Frete", "Quantidade"]
                 fig = px.bar(grafico, x="Tipo de Frete", y="Quantidade", title="Distribuição de Fretes Pagos e Não Pagos", color="Tipo de Frete")
                 st.plotly_chart(fig)
-        else:
-            st.info("Nenhuma ordem registrada no momento.")
+# Aba Filtrar por Cliente
+elif aba == "Filtrar por Cliente":
+    st.header("Filtrar e Imprimir Informações por Cliente")
+
+    # Buscar dados do banco
+    df = buscar_ordens()
+
+    if not df.empty:
+        # Dropdown para selecionar cliente
+        cliente_selecionado = st.selectbox("Selecione um Cliente (Remetente)", options=df["remetente"].unique())
+
+        # Filtrar dados do cliente
+        df_cliente = df[df["remetente"] == cliente_selecionado]
+
+        # Exibir informações do cliente
+        st.subheader(f"Informações do Cliente: {cliente_selecionado}")
+        st.dataframe(df_cliente)
+
+        # Botão para imprimir (simulado)
+        if st.button("Imprimir"):
+            st.success("Simulação de impressão concluída! Os dados foram enviados para impressão.")
+    else:
+        st.info("Nenhuma ordem registrada no momento.")
 
 with st.sidebar:
       st.image("./logomarca.bmp")
