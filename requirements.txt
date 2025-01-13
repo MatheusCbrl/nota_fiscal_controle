@@ -5,4 +5,3 @@ matplotlib
 supabase
 plotly.express
 fpdf
-io
