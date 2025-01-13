@@ -3,6 +3,7 @@ from supabase import create_client, Client
 import datetime
 import pandas as pd
 import plotly.express as px
+import io
 from fpdf import FPDF
 
 # Configurando a conexão com Supabase
@@ -73,39 +74,34 @@ def mostrar_login():
             st.error("Usuário ou senha incorretos")
 
 class PDF(FPDF):
-    #def header(self):
-    #    # Logotipo
-    #    self.image("logomarca.png", 150, 8, 50)  # Substitua pelo caminho do seu logotipo
-    #    self.set_font("Arial", "B", 12)
-    #    self.ln(10)
+    def header(self):
+        self.image("logomarca.png", 10, 8, 33)  # Logo at the top left
+        self.set_font("Arial", "B", 12)
+        self.cell(0, 10, "ORDEM DE DESPACHO", 0, 1, "C")
+        self.ln(5)
 
     def footer(self):
         self.set_y(-15)
         self.set_font("Arial", "I", 8)
         self.cell(0, 10, f"Página {self.page_no()}", align="C")
 
-    def add_title(self, cliente):
-        self.set_font("Arial", "B", 12)
-        self.set_text_color(40, 40, 100)
-        
-        self.image("logomarca.png", 150, 8, 50)  # Substitua pelo caminho do seu logotipo
-        self.cell(0, 10, f"Relatório: {cliente}", ln=True, align="C")
-        self.ln(5)
-        
-        # Inserindo a segunda imagem
-        self.image("logomarca.png", 150, 350, 50)
-
-    def add_details(self, df_cliente, colunas_mapeadas, y_offset=0):
-        self.set_y(y_offset)  # Definir o deslocamento vertical
-        self.set_font("Arial", size=12) 
-        for index, row in df_cliente.iterrows():
-            for col, value in row.items():
-                if col in colunas_mapeadas:
-                    self.set_font("Arial", "B", 10)
-                    self.cell(50, 10, f"{colunas_mapeadas[col]}:", border=0, ln=0)
-                    self.set_font("Arial", "", 8)
-                    self.cell(0, 10, str(value), border=0, ln=1)
-            self.ln(5)  # Espaço entre ordens
+    def add_order_details(self, order_data):
+        self.set_font("Arial", size=10)
+        self.cell(0, 5, f"Remetente: {order_data['remetente']}", ln=True)
+        self.cell(0, 5, f"Destinatário: {order_data['destinatario']}", ln=True)
+        self.cell(0, 5, f"Endereço: {order_data['endereco_destinatario']}", ln=True)
+        self.cell(0, 5, f"Cidade: {order_data['cidade']}", ln=True)
+        self.cell(0, 5, f"Frete: {order_data['frete_tipo']}", ln=True)
+        self.cell(0, 5, f"Valor do Frete: R$ {order_data['valor_frete']:.2f}", ln=True)
+        self.cell(0, 5, f"Número da Nota Fiscal: {order_data['valor_nf']}", ln=True)
+        self.cell(0, 5, f"Quantidade de Volumes: {order_data['qtde_volumes']}", ln=True)
+        self.cell(0, 5, f"Conteúdo: {order_data['conteudo']}", ln=True)
+        self.cell(0, 5, f"Peso: {order_data['peso']} Kg", ln=True)
+        self.cell(0, 5, f"Solicitado por: {order_data['solicitado_por']}", ln=True)
+        self.cell(0, 5, f"Data: {order_data['data']} - Hora: {order_data['hora']}", ln=True)
+        self.ln(5)  # Space before the signature line
+        self.cell(0, 10, "__________________________", ln=True)
+        self.cell(0, 10, "Assinatura", ln=True)
 
 # Função para alternar o estado de "Pago" para "A Pagar" e vice-versa
 def alternar_frete_tipo(ordem_id, estado_atual):
@@ -231,6 +227,36 @@ else:
                         st.error(f"Erro ao cadastrar remetente: {response.json()}")
     # Atualizando a aba "Consulta e Relatórios"
     elif aba == "Consulta e Relatórios":
+        
+        #Exibir registros existentes
+        st.header("Ordens de Despacho Registradas")
+        try:
+            ordens = supabase.table("ordens_despacho").select("*").execute()
+            if ordens.data:
+                # Exibir a tabela
+                st.table(ordens.data)
+                
+                # Criar um DataFrame a partir dos dados
+                df_ordens = pd.DataFrame(ordens.data)
+                
+                # Botão para download em Excel
+                excel_file = io.BytesIO()
+                with pd.ExcelWriter(excel_file, engine='xlsxwriter') as writer:
+                    df_ordens.to_excel(writer, sheet_name='Ordens de Despacho', index=False)
+                
+                excel_file.seek(0)  # Voltar ao início do arquivo para leitura
+        
+                st.download_button(
+                    label="Baixar como Excel",
+                    data=excel_file,
+                    file_name="ordens_despacho.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            else:
+                st.info("Nenhuma ordem registrada ainda.")
+        except Exception as e:
+            st.error(f"Erro ao buscar dados: {e}")
+
         st.header("Consulta e Relatórios de Ordens de Despacho")
         # Buscar dados do banco
         df = buscar_ordens()
@@ -274,7 +300,7 @@ else:
     # Aba Filtrar por Cliente com Exportação para PDF
     elif aba == "Filtrar por Cliente":
         st.header("Filtrar e Imprimir Informações por Cliente")
-    
+        
         # Buscar dados do banco
         clientes = buscar_ordens_impressao()
         df = buscar_ordens()
@@ -288,59 +314,40 @@ else:
         )
 
         if st.button("Gerar PDF"):
-            if len(clientes_selecionados) == 0:
-                st.warning("Por favor, selecione pelo menos um cliente.")
-            elif len(clientes_selecionados) > 2:
-                st.warning("Selecione no máximo dois clientes.")
-            else:
-                # Gerar dados filtrados para cada cliente
-                pdf = PDF(format="A4")
-                pdf.set_auto_page_break(auto=True)
-                for idx, cliente in enumerate(clientes_selecionados):
-                    df_cliente = buscar_ordens()
-                    df_cliente_filtrado = df_cliente[df_cliente["remetente"] == cliente["remetente"]]
-
-                    if df_cliente_filtrado.empty:
-                        st.warning(f"Não há dados disponíveis para o cliente {cliente['remetente']}.")
-                        continue
-
-                    # Adicionar meia página para o cliente
-                    if idx % 2 == 0:  # Adicionar nova página se for o primeiro cliente de uma dupla
-                        pdf.add_page()
-
-                    # Adicionar dados do cliente à página atual
-                    max_altura = 148.5  # Meia altura de uma página A4
-                    pdf.add_title(cliente["remetente"])
-                    pdf.add_details(df_cliente_filtrado, colunas_mapeadas = {
-                                                            "remetente": "Remetente",
-                                                            "endereco_remetente": "Endereço do Remetente",
-                                                            "destinatario": "Destinatário",
-                                                            "endereco_destinatario": "Endereço do Destinatário",
-                                                            "cidade": "Cidade",
-                                                            "frete_tipo": "Tipo de Frete",
-                                                            "valor_frete": "Valor do Frete",
-                                                            "data": "Data",
-                                                            "hora": "Hora",
-                                                            "conteudo": "Conteúdo",
-                                                            "qtde_volumes": "Quantidade de Volumes",
-                                                            "valor_nf": "Valor da Nota Fiscal",
-                                                            "peso": "Peso (Kg)",
-                                                            "solicitado_por": "Solicitado Por"
-                                                        }, y_offset=(idx % 2) * max_altura)
-
-            # Salvar PDF único
-            arquivo_pdf_unico = "Relatorio_Clientes_Unico.pdf"
-            pdf.output(arquivo_pdf_unico)
-
-            st.success("PDF único gerado com sucesso!")
-            with open(arquivo_pdf_unico, "rb") as pdf_file:
-                st.download_button(
-                    label="Baixar PDF Único",
-                    data=pdf_file,
-                    file_name=arquivo_pdf_unico,
-                    mime="application/pdf",
-                )
-                
+           if len(clientes_selecionados) == 0:
+               st.warning("Por favor, selecione pelo menos um cliente.")
+           elif len(clientes_selecionados) > 2:
+               st.warning("Selecione no máximo dois clientes.")
+           else:
+               # Gerar dados filtrados para cada cliente
+               pdf = PDF(format="A4")
+               pdf.set_auto_page_break(auto=True)
+               
+               for cliente in clientes_selecionados:
+                   df_cliente = buscar_ordens()
+                   df_cliente_filtrado = df_cliente[df_cliente["remetente"] == cliente["remetente"]]
+        
+                   if df_cliente_filtrado.empty:
+                       st.warning(f"Não há dados disponíveis para o cliente {cliente['remetente']}.")
+                       continue
+        
+                   pdf.add_page()
+                   for _, order in df_cliente_filtrado.iterrows():
+                       pdf.add_order_details(order)
+        
+               # Salvar PDF único
+               arquivo_pdf_unico = "Relatorio_Clientes_Unico.pdf"
+               pdf.output(arquivo_pdf_unico)
+        
+               st.success("PDF único gerado com sucesso!")
+               with open(arquivo_pdf_unico, "rb") as pdf_file:
+                   st.download_button(
+                       label="Baixar PDF Único",
+                       data=pdf_file,
+                       file_name=arquivo_pdf_unico,
+                       mime="application/pdf",
+                   )
+                       
 
 
 
