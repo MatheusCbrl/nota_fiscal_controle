@@ -33,7 +33,7 @@ def inserir_remetente(nome, cpf_cnpj, endereco, contato):
     response = supabase.table("cadastro_remetente").insert(data).execute()
     return response
 
-
+    
 # Função para buscar todos os remetentes cadastrados
 def buscar_remetentes():
     response = supabase.table("cadastro_remetente").select("*").execute()
@@ -62,6 +62,17 @@ def buscar_ordens():
         st.error(f"Erro ao buscar dados: {e}")
         return pd.DataFrame()
     
+# Função para excluir uma ordem
+def excluir_ordem(ordem_id):
+    try:
+        response = supabase.table("ordens_despacho").delete().eq("id", ordem_id).execute()
+        if response:
+            st.success("Ordem excluída com sucesso!")
+        else:
+            st.error("Erro ao excluir a ordem. Tente novamente.")
+    except Exception as e:
+        st.error(f"Erro ao excluir a ordem: {e}")
+        
 # Função para mostrar tela de login
 def mostrar_login():
     st.title("Login")
@@ -123,25 +134,25 @@ if 'authenticated' not in st.session_state:
 if not st.session_state.authenticated:
     mostrar_login()
 else:
-    aba = st.sidebar.radio("Navegação", ["Cadastro","Cadastro de Remetentes", "Consulta e Relatórios", "Filtrar por Cliente"])
+    aba = st.sidebar.radio("Navegação", ["Cadastro","Cadastro de Pessoas", "Consulta e Relatórios", "Filtrar por Cliente"])
     # Aba de Cadastro
     if aba == "Cadastro":
         # Layout do Streamlit
         st.title("Sistema de Ordem de Despacho")
         
         # Pesquisa de Remetente para Cadastro de Notas
-        st.subheader("Pesquisar Remetente")
+        st.subheader("Pesquisar Pessoas")
         remetentes = buscar_remetentes()
         remetente_selecionado = None
 
         if remetentes:
             remetente_selecionado = st.selectbox(
-                "Selecione o Remetente", 
+                "Selecione a Pessoa", 
                 options=remetentes, 
                 format_func=lambda x: f"{x['nome']}"
             )
         else:
-            st.warning("Nenhum remetente cadastrado ainda!")
+            st.warning("Nenhum cadastrado ainda!")
 
         # Preenchimento automático do Remetente
         remetente_nome = remetente_selecionado['nome'] if remetente_selecionado else ""
@@ -150,11 +161,12 @@ else:
         # Campos do formulário
         col1, col2, col3 = st.columns(3)
         with col1:
+            nr_nf = st.text_input("Número da Nota Fiscal")
             remetente = st.text_input("Remetente", value=remetente_nome, disabled=False)
         with col2:
             endereco_remetente = st.text_input("Endereço do Remetente", value=remetente_endereco, disabled=False)
         with col3:
-            destinatario = st.text_input("Destinatário")
+            destinatario = st.text_input("Destinatário", value=remetente_nome, disabled=False)
         col1, col2, col3 = st.columns(3)
         with col1:
             endereco_destinatario = st.text_input("Endereço do Destinatário")
@@ -200,14 +212,15 @@ else:
                 "qtde_volumes": qtde_volumes,
                 "valor_nf": valor_nf,
                 "peso": peso,
-                "solicitado_por": solicitado_por
+                "solicitado_por": solicitado_por,
+                "numero_nf": nr_nf
             }
             response = salvar_ordem(dados_ordem)
             if response:
                 st.success("Ordem salva com sucesso!")
-    # aba "Cadastro de Remetentes"
-    elif aba == "Cadastro de Remetentes":
-        st.header("Cadastro de Remetente")
+    # aba "Cadastro de Pessoas"
+    elif aba == "Cadastro de Pessoas":
+        st.header("Cadastro de Pessoas")
         with st.form("form_cadastro_remetente"):
             nome = st.text_input("Nome (Obrigatório)", max_chars=255)
             cpf_cnpj = st.text_input("CPF/CNPJ (Opcional)", max_chars=20)
@@ -225,6 +238,26 @@ else:
                         st.success("Remetente cadastrado com sucesso!")
                     else:
                         st.error(f"Erro ao cadastrar remetente: {response.json()}")
+    
+        st.header("Ordens de Despacho Registradas")
+        ordens = buscar_ordens()
+
+        if not ordens.empty:
+            st.dataframe(ordens)
+
+            ordem_id = st.text_input("ID da Ordem para Excluir")
+            if st.button("Excluir Ordem"):
+                try:
+                    response = supabase.table("ordens_despacho").delete().eq("id", ordem_id).execute()
+                    if response:
+                        st.success("Ordem excluída com sucesso!")
+                    else:
+                        st.error("Erro ao excluir a ordem. Verifique o ID.")
+                except Exception as e:
+                    st.error(f"Erro ao excluir a ordem: {e}")
+        else:
+            st.warning("Nenhuma ordem registrada.")
+            
     # Atualizando a aba "Consulta e Relatórios"
     elif aba == "Consulta e Relatórios":
         
