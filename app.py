@@ -4,6 +4,7 @@ import datetime
 import pandas as pd
 import plotly.express as px
 import io
+from io import BytesIO
 from fpdf import FPDF
 
 # Configurando a conexão com Supabase
@@ -218,6 +219,27 @@ else:
             response = salvar_ordem(dados_ordem)
             if response:
                 st.success("Ordem salva com sucesso!")
+                
+                # Geração do PDF com duas vias
+                pdf = PDF(format="A4")
+                pdf.set_auto_page_break(auto=True)
+                pdf.add_page()
+                pdf.add_order_details(dados_ordem)
+                pdf.ln(10)  # Separação para a segunda via
+                pdf.add_order_details(dados_ordem)
+                
+                # Salvar PDF único
+                arquivo_pdf_unico = "Relatorio_Clientes_Unico.pdf"
+                pdf.output(arquivo_pdf_unico)
+
+                # Botão de download para o PDF gerado
+                with open(arquivo_pdf_unico, "rb") as pdf_file:
+                   st.download_button(
+                       label="Baixar PDF Único",
+                       data=pdf_file,
+                       file_name=arquivo_pdf_unico,
+                       mime="application/pdf",
+                   )
     # aba "Cadastro de Pessoas"
     elif aba == "Cadastro de Pessoas":
         st.header("Cadastro de Pessoas")
